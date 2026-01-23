@@ -46,11 +46,12 @@
     <p>Webové dashboardy na portu 3000. Skript nastaví výchozího admina i datasource a přidá ukázkový
       dashboard, takže po instalaci hned vidíte první graf.</p>
 
-    <h3>Volitelná rozšíření (Nginx + MQTT)</h3>
-    <p>Rozšířený skript přidává Nginx jako reverse proxy (pro jednotný vstupní bod a možnost HTTPS)
-      a MQTT broker (Eclipse Mosquitto) pro nativní ingest IoT dat. Nginx může směrovat Grafanu i
-      volitelné DB API, MQTT broker přijímá data od zařízení a můžete ho propojit s databází
-      jednoduchým ingest skriptem.</p>
+    <h3>Volitelná rozšíření (Nginx + MQTT + Node-RED)</h3>
+    <p>Rozšířený skript přidává Nginx jako reverse proxy (pro jednotný vstupní bod a možnost HTTPS),
+      MQTT broker (Eclipse Mosquitto) pro nativní ingest IoT dat a volitelně Node-RED pro zpracování
+      MQTT payloadů do line protocol. Nginx může směrovat Grafanu i volitelné DB API, MQTT broker
+      přijímá data od zařízení a Node-RED je může transformovat, filtrovat nebo obohatit před zápisem
+      do databáze.</p>
 
     <div class="callout">
       <strong>Tip:</strong> Pokud Grafana běží uvnitř Docker Compose, datasource pro VictoriaMetrics může
@@ -63,6 +64,7 @@
       <li><strong>3000</strong> – Grafana (vždy)</li>
       <li><strong>8428</strong> – VictoriaMetrics (jen pro <code>--stack=vm</code>)</li>
       <li><strong>8086</strong> – InfluxDB (jen pro <code>--stack=influx</code>)</li>
+      <li><strong>1880</strong> – Node-RED editor (pokud je zapnutý)</li>
     </ul>
     <p>Doporučení: omezte přístup na vlastní IP/VPN a změňte výchozí hesla.</p>
 

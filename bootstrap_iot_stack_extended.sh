@@ -4,6 +4,7 @@
 # This script builds on bootstrap_iot_stack.sh by optionally adding:
 # - Nginx reverse proxy (for a single entry point to Grafana and optional DB APIs)
 # - MQTT broker (Eclipse Mosquitto)
+# - Node-RED for MQTT processing and forwarding to the metrics store
 
 set -euo pipefail
 
@@ -19,6 +20,7 @@ INFLUX_ADMIN_PASS=${INFLUX_ADMIN_PASS:-admin}
 
 ENABLE_NGINX=false
 ENABLE_MQTT=false
+ENABLE_NODE_RED=false
 EXPOSE_DB_VIA_NGINX=false
 EXPOSE_GRAFANA=true
 NGINX_DOMAIN=""
@@ -27,6 +29,9 @@ MQTT_USER=${MQTT_USER:-iot}
 MQTT_PASS=${MQTT_PASS:-iot}
 MQTT_PORT=${MQTT_PORT:-1883}
 MQTT_WS_PORT=${MQTT_WS_PORT:-9001}
+NODE_RED_PORT=${NODE_RED_PORT:-1880}
+NODE_RED_USER=${NODE_RED_USER:-admin}
+NODE_RED_PASS=${NODE_RED_PASS:-admin}
 DRY_RUN=false
 
 # Parse command-line arguments
@@ -42,6 +47,7 @@ for arg in "$@"; do
     --influx-pass=*) INFLUX_ADMIN_PASS="${arg#*=}" ;;
     --enable-nginx) ENABLE_NGINX=true ;;
     --enable-mqtt) ENABLE_MQTT=true ;;
+    --enable-node-red) ENABLE_NODE_RED=true ;;
     --expose-db-via-nginx) EXPOSE_DB_VIA_NGINX=true ;;
     --expose-grafana) EXPOSE_GRAFANA=true ;;
     --no-expose-grafana) EXPOSE_GRAFANA=false ;;
@@ -51,6 +57,9 @@ for arg in "$@"; do
     --mqtt-pass=*) MQTT_PASS="${arg#*=}" ;;
     --mqtt-port=*) MQTT_PORT="${arg#*=}" ;;
     --mqtt-ws-port=*) MQTT_WS_PORT="${arg#*=}" ;;
+    --node-red-port=*) NODE_RED_PORT="${arg#*=}" ;;
+    --node-red-user=*) NODE_RED_USER="${arg#*=}" ;;
+    --node-red-pass=*) NODE_RED_PASS="${arg#*=}" ;;
     --dry-run) DRY_RUN=true ;;
     *) echo "Unknown option: $arg"; exit 1 ;;
   esac
@@ -113,13 +122,14 @@ fi
 
 # Create directories for volumes and configs
 log "Creating data directories under $DATA_DIR"
-run_cmd "mkdir -p $DATA_DIR/volumes/{grafana,vmdata,influxdb,mqtt/data,mqtt/log}"
+run_cmd "mkdir -p $DATA_DIR/volumes/{grafana,vmdata,influxdb,mqtt/data,mqtt/log,node-red}"
 run_cmd "mkdir -p $DATA_DIR/compose"
 run_cmd "mkdir -p $DATA_DIR/provisioning/datasources"
 run_cmd "mkdir -p $DATA_DIR/provisioning/dashboards"
 run_cmd "mkdir -p $DATA_DIR/nginx/conf.d"
 run_cmd "mkdir -p $DATA_DIR/mqtt"
 run_cmd "chown -R 472:472 $DATA_DIR/volumes/grafana"
+run_cmd "chown -R 1000:1000 $DATA_DIR/volumes/node-red"
 
 # Build docker-compose.yml depending on the chosen stack type
 COMPOSE_FILE="$DATA_DIR/compose/docker-compose.yml"
@@ -272,6 +282,202 @@ ${MOSQUITTO_WS_PORTS}    volumes:
 EOF
 fi
 
+if [ "$ENABLE_NODE_RED" = true ]; then
+  log "Configuring Node-RED for MQTT ingestion"
+  if [ "$ENABLE_MQTT" = false ]; then
+    log "Warning: Node-RED is enabled without MQTT broker. Flows will expect a broker at mosquitto:1883."
+  fi
+
+  NODE_RED_PASS_HASH=""
+  if [ -n "$NODE_RED_PASS" ]; then
+    if [ "$DRY_RUN" = true ]; then
+      echo "DRY‑RUN: docker run --rm nodered/node-red:latest node-red-admin hash-pw \"$NODE_RED_PASS\""
+      NODE_RED_PASS_HASH="__HASH__"
+    else
+      NODE_RED_PASS_HASH=$(docker run --rm nodered/node-red:latest node-red-admin hash-pw "$NODE_RED_PASS")
+    fi
+  fi
+
+  write_file "$DATA_DIR/volumes/node-red/settings.js" <<EOF
+module.exports = {
+  adminAuth: {
+    type: "credentials",
+    users: [
+      {
+        username: "${NODE_RED_USER}",
+        password: "${NODE_RED_PASS_HASH}",
+        permissions: "*"
+      }
+    ]
+  },
+  flowFile: "flows.json"
+};
+EOF
+
+  NODE_RED_DB_URL=""
+  if [ "$STACK_TYPE" = "vm" ]; then
+    NODE_RED_DB_URL="http://victoriametrics:8428/write"
+  else
+    NODE_RED_DB_URL="http://influxdb:8086/write?db=${INFLUX_DB}"
+  fi
+
+  write_file "$DATA_DIR/volumes/node-red/flows.json" <<'EOF'
+[
+  {
+    "id": "flow1",
+    "type": "tab",
+    "label": "MQTT to Metrics",
+    "disabled": false,
+    "info": ""
+  },
+  {
+    "id": "mqtt-in-1",
+    "type": "mqtt in",
+    "z": "flow1",
+    "name": "MQTT ingest",
+    "topic": "iot/#",
+    "qos": "0",
+    "datatype": "auto",
+    "broker": "mqtt-broker-1",
+    "nl": false,
+    "rap": true,
+    "rh": 0,
+    "x": 140,
+    "y": 120,
+    "wires": [["json-1"]]
+  },
+  {
+    "id": "json-1",
+    "type": "json",
+    "z": "flow1",
+    "name": "Parse JSON",
+    "property": "payload",
+    "action": "",
+    "pretty": false,
+    "x": 330,
+    "y": 120,
+    "wires": [["function-1"]]
+  },
+  {
+    "id": "function-1",
+    "type": "function",
+    "z": "flow1",
+    "name": "To line protocol",
+    "func": "let data = msg.payload;\\nif (typeof data === \\"string\\") {\\n  try { data = JSON.parse(data); } catch (e) {}\\n}\\nconst measurement = data.measurement || \\"iot_metric\\";\\nconst fields = data.fields || { value: data.value };\\nconst tags = data.tags || {};\\nconst escapeTag = (value) => String(value).replace(/[,= ]/g, '\\\\$&');\\nconst escapeFieldKey = (value) => String(value).replace(/[,= ]/g, '\\\\$&');\\nconst formatValue = (value) => {\\n  if (typeof value === \\"number\\") return value;\\n  if (typeof value === \\"boolean\\") return value ? \\"true\\" : \\"false\\";\\n  return '\\"' + String(value).replace(/\\\\\\"/g, '\\\\\\\\"') + '\\"';\\n};\\nconst tagStr = Object.keys(tags).map((key) => escapeTag(key) + \\"=\\" + escapeTag(tags[key])).join(\",\");\\nconst fieldStr = Object.keys(fields).map((key) => escapeFieldKey(key) + \\"=\\" + formatValue(fields[key])).join(\",\");\\nmsg.payload = measurement + (tagStr ? \\",\\" + tagStr : \\"\\" ) + \\" \\" + fieldStr;\\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 540,
+    "y": 120,
+    "wires": [["http-headers-1"]]
+  },
+  {
+    "id": "http-headers-1",
+    "type": "change",
+    "z": "flow1",
+    "name": "Set headers",
+    "rules": [
+      {
+        "t": "set",
+        "p": "headers",
+        "pt": "msg",
+        "to": "{\\"Content-Type\\":\\"text/plain\\"}",
+        "tot": "json"
+      }
+    ],
+    "x": 740,
+    "y": 120,
+    "wires": [["http-request-1"]]
+  },
+  {
+    "id": "http-request-1",
+    "type": "http request",
+    "z": "flow1",
+    "name": "Write metrics",
+    "method": "POST",
+    "ret": "obj",
+    "paytoqs": "ignore",
+    "url": "__NODE_RED_DB_URL__",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "authType": "",
+    "senderr": false,
+    "headers": [],
+    "x": 940,
+    "y": 120,
+    "wires": [["debug-1"]]
+  },
+  {
+    "id": "debug-1",
+    "type": "debug",
+    "z": "flow1",
+    "name": "DB response",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg",
+    "x": 1130,
+    "y": 120,
+    "wires": []
+  },
+  {
+    "id": "mqtt-broker-1",
+    "type": "mqtt-broker",
+    "name": "Mosquitto",
+    "broker": "mosquitto",
+    "port": "1883",
+    "clientid": "",
+    "autoConnect": true,
+    "usetls": false,
+    "protocolVersion": "4",
+    "keepalive": "60",
+    "cleansession": true,
+    "birthTopic": "",
+    "birthQos": "0",
+    "birthPayload": "",
+    "closeTopic": "",
+    "closePayload": "",
+    "willTopic": "",
+    "willQos": "0",
+    "willPayload": "",
+    "user": "__MQTT_USER__",
+    "password": "__MQTT_PASS__"
+  }
+]
+EOF
+
+  run_cmd "sed -i \"s|__NODE_RED_DB_URL__|$NODE_RED_DB_URL|g\" $DATA_DIR/volumes/node-red/flows.json"
+  run_cmd "sed -i \"s|__MQTT_USER__|$MQTT_USER|g\" $DATA_DIR/volumes/node-red/flows.json"
+  run_cmd "sed -i \"s|__MQTT_PASS__|$MQTT_PASS|g\" $DATA_DIR/volumes/node-red/flows.json"
+
+  NODE_RED_DEPENDS="      - grafana"
+  if [ "$STACK_TYPE" = "vm" ]; then
+    NODE_RED_DEPENDS="${NODE_RED_DEPENDS}\n      - victoriametrics"
+  else
+    NODE_RED_DEPENDS="${NODE_RED_DEPENDS}\n      - influxdb"
+  fi
+  if [ "$ENABLE_MQTT" = true ]; then
+    NODE_RED_DEPENDS="${NODE_RED_DEPENDS}\n      - mosquitto"
+  fi
+
+  cat >> "$COMPOSE_FILE" <<EOF
+  nodered:
+    image: nodered/node-red:latest
+    restart: unless-stopped
+    ports:
+      - "$NODE_RED_PORT:1880"
+    volumes:
+      - $DATA_DIR/volumes/node-red:/data
+    depends_on:
+${NODE_RED_DEPENDS}
+EOF
+fi
+
 # Create Grafana datasource provisioning file
 DSPROV="$DATA_DIR/provisioning/datasources/datasource.yml"
 log "Generating Grafana datasource configuration"
@@ -400,6 +606,11 @@ if [ "$ENABLE_MQTT" = true ]; then
   else
     docker run --rm --network host eclipse-mosquitto:2 sh -c "mosquitto_sub -h localhost -p $MQTT_PORT -u $MQTT_USER -P $MQTT_PASS -t iot/test -C 1 -W 5 & sleep 1; mosquitto_pub -h localhost -p $MQTT_PORT -u $MQTT_USER -P $MQTT_PASS -t iot/test -m hello; wait"
   fi
+fi
+
+if [ "$ENABLE_NODE_RED" = true ]; then
+  log "Waiting for Node-RED on port ${NODE_RED_PORT}..."
+  wait_for_port localhost "$NODE_RED_PORT" || { log "Node-RED did not become ready"; exit 1; }
 fi
 
 log "Bootstrap complete. Grafana is available on port 3000 (admin credentials: ${GRAFANA_ADMIN_USER}/${GRAFANA_ADMIN_PASS})."

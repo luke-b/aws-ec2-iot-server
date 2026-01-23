@@ -49,6 +49,16 @@ run_cmd() {
   fi
 }
 
+write_file() {
+  local path="$1"
+  if [ "$DRY_RUN" = true ]; then
+    echo "DRY‑RUN: write $path"
+    cat
+  else
+    cat > "$path"
+  fi
+}
+
 # Pre‑flight checks: ensure script is run as root and OS is Debian/Ubuntu
 if [ "$EUID" -ne 0 ]; then
   echo "This script must be run as root (use sudo)." >&2
@@ -88,13 +98,14 @@ run_cmd "mkdir -p $DATA_DIR/volumes/{grafana,vmdata,influxdb}"
 run_cmd "mkdir -p $DATA_DIR/compose"
 run_cmd "mkdir -p $DATA_DIR/provisioning/datasources"
 run_cmd "mkdir -p $DATA_DIR/provisioning/dashboards"
+run_cmd "chown -R 472:472 $DATA_DIR/volumes/grafana"
 
 # Build docker-compose.yml depending on the chosen stack type
 COMPOSE_FILE="$DATA_DIR/compose/docker-compose.yml"
 log "Generating docker-compose.yml for stack type $STACK_TYPE"
 
 if [ "$STACK_TYPE" = "vm" ]; then
-  cat > "$COMPOSE_FILE" <<EOF
+  write_file "$COMPOSE_FILE" <<EOF
 version: '3.8'
 services:
   victoriametrics:
@@ -122,7 +133,7 @@ services:
 EOF
 else
   # InfluxDB stack
-  cat > "$COMPOSE_FILE" <<EOF
+  write_file "$COMPOSE_FILE" <<EOF
 version: '3.8'
 services:
   influxdb:
@@ -156,7 +167,7 @@ fi
 DSPROV="$DATA_DIR/provisioning/datasources/datasource.yml"
 log "Generating Grafana datasource configuration"
 if [ "$STACK_TYPE" = "vm" ]; then
-  cat > "$DSPROV" <<EOF
+  write_file "$DSPROV" <<EOF
 apiVersion: 1
 datasources:
   - name: VictoriaMetrics
@@ -166,7 +177,7 @@ datasources:
     isDefault: true
 EOF
 else
-  cat > "$DSPROV" <<EOF
+  write_file "$DSPROV" <<EOF
 apiVersion: 1
 datasources:
   - name: InfluxDB
@@ -186,7 +197,7 @@ fi
 # Create Grafana dashboard provisioning (simple example dashboard)
 DASHPROV="$DATA_DIR/provisioning/dashboards/dashboard.yml"
 DASH_JSON="$DATA_DIR/provisioning/dashboards/iot_dashboard.json"
-cat > "$DASHPROV" <<EOF
+write_file "$DASHPROV" <<EOF
 apiVersion: 1
 providers:
   - name: "default"
@@ -200,7 +211,7 @@ EOF
 
 # Write a very basic dashboard that charts the sample metric/measurement
 log "Generating Grafana dashboard JSON"
-cat > "$DASH_JSON" <<'EOF'
+write_file "$DASH_JSON" <<'EOF'
 {
   "id": null,
   "title": "IoT Example Dashboard",

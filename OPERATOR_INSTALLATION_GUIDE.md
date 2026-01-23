@@ -39,6 +39,8 @@ Open inbound ports in the EC2 security group **only as needed**:
 
 > Recommendation: restrict ingress to your admin IP or VPN endpoint whenever possible.
 
+> **Note:** Do not skip the security group setup in **Section 2.2**—Grafana (TCP 3000) is always required, while VictoriaMetrics (TCP 8428) or InfluxDB (TCP 8086) are only needed for their respective stack choices.
+
 ---
 
 ## 3) Installation workflow (operator-grade step-by-step)
@@ -205,6 +207,11 @@ sudo ./bootstrap_iot_stack.sh \
 
 - The script explicitly checks port 3000 and fails if it doesn’t open.【F:bootstrap_iot_stack.sh†L224-L226】
 - Confirm security group ingress allows TCP 3000 from your IP.
+
+### Grafana datasource cannot connect (VictoriaMetrics)
+
+- The provisioned datasource URL is `http://victoriametrics:8428`, which is correct **inside the Docker network** because Grafana and VictoriaMetrics share the same Compose network and can resolve the `victoriametrics` service name.【F:bootstrap_iot_stack.sh†L106-L128】【F:bootstrap_iot_stack.sh†L166-L176】
+- If Grafana is running outside Docker, update the datasource URL to the host-reachable address (for example, `http://localhost:8428` on the EC2 host or `http://<ec2-private-ip>:8428`), and ensure the security group allows TCP 8428 if accessing it remotely.
 
 ### Database not ready
 

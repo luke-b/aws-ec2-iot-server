@@ -7,6 +7,10 @@ Vítejte! Tento repozitář obsahuje skript **`bootstrap_iot_stack.sh`**, který
 
 Skript nainstaluje Docker, připraví perzistentní úložiště, vygeneruje Docker Compose konfiguraci, nastaví Grafanu s datasource a ukázkovým dashboardem a ověří, že se data opravdu ukládají.
 
+## Stack chart
+
+![Vizualizace stacku IoT monitoringu](iot_diagram.png)
+
 ## Rychlý start
 
 ```sh

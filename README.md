@@ -22,6 +22,24 @@ http://<server-ip>:3000
 
 Přihlašovací údaje nastavíte parametry `--grafana-user` a `--grafana-pass` (výchozí `admin/admin`).
 
+## Rozšířený stack (Nginx + MQTT)
+
+Pro variantu s reverse proxy a MQTT brokerem použijte rozšířený skript:
+
+```sh
+chmod +x bootstrap_iot_stack_extended.sh
+sudo ./bootstrap_iot_stack_extended.sh --stack=vm --enable-nginx --enable-mqtt
+```
+
+Klíčové parametry:
+
+- `--enable-nginx` – zapne Nginx reverse proxy před Grafanou.
+- `--enable-mqtt` – přidá MQTT broker (Eclipse Mosquitto).
+- `--no-expose-grafana` – nepublikuje port 3000 na hostu (použijte s Nginx).
+- `--expose-db-via-nginx` – volitelně zpřístupní DB API přes Nginx.
+- `--mqtt-user` / `--mqtt-pass` – přihlašovací údaje pro MQTT.
+- `--mqtt-port` / `--mqtt-ws-port` – porty pro MQTT a WebSocket MQTT.
+
 ## Požadavky
 
 - Ubuntu 22.04 LTS (nebo jiný Debian‑based systém s `apt`)

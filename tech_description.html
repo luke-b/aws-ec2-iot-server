@@ -46,6 +46,12 @@
     <p>Webové dashboardy na portu 3000. Skript nastaví výchozího admina i datasource a přidá ukázkový
       dashboard, takže po instalaci hned vidíte první graf.</p>
 
+    <h3>Volitelná rozšíření (Nginx + MQTT)</h3>
+    <p>Rozšířený skript přidává Nginx jako reverse proxy (pro jednotný vstupní bod a možnost HTTPS)
+      a MQTT broker (Eclipse Mosquitto) pro nativní ingest IoT dat. Nginx může směrovat Grafanu i
+      volitelné DB API, MQTT broker přijímá data od zařízení a můžete ho propojit s databází
+      jednoduchým ingest skriptem.</p>
+
     <div class="callout">
       <strong>Tip:</strong> Pokud Grafana běží uvnitř Docker Compose, datasource pro VictoriaMetrics může
       být <code>http://victoriametrics:8428</code>. Pokud Grafanu provozujete mimo Docker, změňte URL na

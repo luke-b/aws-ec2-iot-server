@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lightweight IoT Monitoring Stack – Technical Overview</title>
+  <style>
+    body { font-family: Arial, sans-serif; line-height: 1.6; margin: 0; padding: 0; }
+    header { background-color: #003366; color: #fff; padding: 20px; }
+    h1, h2, h3 { margin-top: 1.2em; }
+    main { padding: 20px; }
+    figure { margin: 20px auto; text-align: center; }
+    figcaption { font-style: italic; color: #444; }
+    code, pre { background-color: #f5f5f5; padding: 2px 4px; border-radius: 3px; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border: 1px solid #ccc; padding: 8px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Lightweight IoT Monitoring Stack – Technical Overview</h1>
+    <p>This document provides a deep dive into the architecture, components and configuration of the
+      lightweight monitoring stack deployed by <code>bootstrap_iot_stack.sh</code>.  It explains why
+      VictoriaMetrics or InfluxDB are suitable for a free‑tier EC2 instance, how Grafana is
+      integrated, and how to ingest data from an ESP32 microcontroller.</p>
+  </header>
+  <main>
+    <h2>Architecture</h2>
+    <p>The stack aims to provide an end‑to‑end data path from IoT sensors to dashboards without
+      consuming significant resources.  It consists of two containers: a time‑series database
+      (VictoriaMetrics or InfluxDB 1.8) and Grafana for visualisation.  The database accepts
+      measurements via HTTP API, stores them on disk, and Grafana queries the data using a
+      datasource configured automatically by the script.  The diagram below illustrates the flow of
+      data from an ESP32 sensor to the monitoring system.</p>
+    <figure>
+      <img src="iot_diagram.png" alt="IoT monitoring stack diagram" style="max-width:100%;height:auto;">
+      <figcaption>Figure 1: End‑to‑end flow of data from an ESP32 sensor through the database to Grafana.</figcaption>
+    </figure>
+
+    <h2>Component Details</h2>
+    <h3>VictoriaMetrics</h3>
+    <p>VictoriaMetrics is a high‑performance time‑series database that offers low resource
+      consumption and a unified API.  When deployed in single‑node mode, it exposes a
+      Prometheus‑compatible API on port 8428 and accepts ingestion via both Prometheus remote write
+      and InfluxDB line protocol【944701197905164†L765-L771】.  The data is stored under a
+      configurable directory and retention period; the default retention is 31 days【944701197905164†L843-L865】.  The
+      <code>bootstrap_iot_stack.sh</code> script mounts a persistent volume at
+      <code>/var/lib/victoria-metrics</code> to retain data across container restarts and allows the retention
+      period to be customised via the <code>--vm-retention</code> flag.</p>
+
+    <h3>InfluxDB 1.8</h3>
+    <p>InfluxDB 1.8 is the last release of the 1.x series and offers a lightweight HTTP API for
+      writes and queries.  It listens on port 8086【934795437163520†L243-L276】, uses line protocol for
+      ingestion, and can be secured with HTTP authentication and an admin user【934795437163520†L283-L331】.  The
+      script configures these settings via environment variables and creates a default database
+      (<code>iot</code> by default).  The storage directory (<code>/var/lib/influxdb</code>) is mounted to the host
+      to persist data.</p>
+
+    <h3>Grafana</h3>
+    <p>Grafana is an open‑source dashboarding platform.  The container exposes port 3000 on the
+      host【761199471576249†L1803-L1817】.  The script provisions Grafana with a default
+      datasource—either Prometheus (pointing to VictoriaMetrics) or InfluxDB—and a simple
+      dashboard that charts a sample metric.  Admin credentials are set using environment
+      variables <code>GF_SECURITY_ADMIN_USER</code> and <code>GF_SECURITY_ADMIN_PASSWORD</code>【888395822639031†L98-L107】.</p>
+
+    <h2>Installation and Configuration</h2>
+    <p>The installation is orchestrated by <code>bootstrap_iot_stack.sh</code>.  It checks for Docker,
+      installs it if necessary, creates directories for data and provisioning files, generates a
+      Docker Compose file appropriate for the selected database, and provisions Grafana.  The key
+      configuration points are:</p>
+    <ul>
+      <li><strong>Data directory:</strong> set via <code>--data-dir</code> (default <code>/opt/iotstack</code>).  Volumes for
+        Grafana, VictoriaMetrics or InfluxDB reside here.</li>
+      <li><strong>Database selection:</strong> choose <code>vm</code> or <code>influx</code> with <code>--stack</code>.  For
+        VictoriaMetrics, retention is adjustable with <code>--vm-retention</code>; for InfluxDB you can set
+        the database name and credentials.</li>
+      <li><strong>Ports:</strong> Grafana listens on <code>3000</code>, VictoriaMetrics on <code>8428</code> and InfluxDB on
+        <code>8086</code>.  Ensure these ports are allowed in the EC2 security group and not used by other
+        services.</li>
+    </ul>
+    <p>After running the script, you can monitor the status of the containers with
+      <code>docker compose ps</code> and view logs using <code>docker compose logs &lt;service&gt;</code>.</p>
+
+    <h2>Data Ingestion</h2>
+    <p>Both databases accept measurements encoded in InfluxDB line protocol.  The script writes a
+      test metric named <code>test_metric</code> to verify the data path.  To ingest your own sensor data,
+      POST line protocol strings to the appropriate endpoint:</p>
+    <table>
+      <tr><th>Database</th><th>Endpoint</th><th>Example Payload</th></tr>
+      <tr><td>VictoriaMetrics</td><td><code>http://&lt;host&gt;:8428/write</code></td><td><code>temperature,room=office value=22.5</code></td></tr>
+      <tr><td>InfluxDB 1.8</td><td><code>http://&lt;host&gt;:8086/write?db=iot</code></td><td><code>temperature,room=office value=22.5</code></td></tr>
+    </table>
+    <p>VictoriaMetrics supports the Influx protocol natively【944701197905164†L765-L771】, and InfluxDB uses the
+      same format【36867540830004†L220-L233】.  After sending data, Grafana will display it on the dashboard.</p>
+
+    <h2>Integrating an ESP32 Sensor</h2>
+    <p>To send measurements from an ESP32 microcontroller, you can use the Wi‑Fi and HTTP client libraries to send line
+      protocol over HTTP.  The following pseudo‑code demonstrates how to POST a temperature measurement to
+      VictoriaMetrics:</p>
+    <pre><code>#include &lt;WiFi.h&gt;
+#include &lt;HTTPClient.h&gt;
+
+const char* ssid = "YOUR_WIFI_SSID";
+const char* password = "YOUR_WIFI_PASSWORD";
+
+void setup() {
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+  }
+}
+
+void loop() {
+  float temp = readSensor();
+  HTTPClient client;
+  client.begin("http://&lt;host&gt;:8428/write");
+  client.addHeader("Content-Type", "text/plain");
+  String line = "temperature value=" + String(temp);
+  client.POST(line);
+  client.end();
+  delay(10000);
+}
+
+float readSensor() {
+  // Replace with your sensor reading code
+  return 20.0 + random(-50, 50) / 10.0;
+}
+</code></pre>
+    <p>For InfluxDB, change the URL to <code>http://&lt;host&gt;:8086/write?db=iot</code>【36867540830004†L220-L233】.  Ensure the
+      device can reach the EC2 instance over the network (e.g., via a VPN or port forwarding).</p>
+
+    <h2>Testing and Verification</h2>
+    <ol>
+      <li><strong>Verify container readiness:</strong> Use <code>docker compose ps</code> to confirm both services are
+        running and healthy.</li>
+      <li><strong>Write a test measurement:</strong> Use <code>curl</code> or your ESP32 to send data.  The script
+        already sends <code>test_metric value=1</code> during installation to confirm connectivity.</li>
+      <li><strong>Query the data:</strong> For VictoriaMetrics, query
+        <code>http://localhost:8428/api/v1/query?query=test_metric</code>.  For InfluxDB, query
+        <code>http://localhost:8086/query?q=SELECT+*+FROM+test_metric&db=iot</code>.  Both should return JSON
+        containing the value you wrote.</li>
+      <li><strong>Open Grafana:</strong> Navigate to port 3000 and log in with the configured admin credentials.
+        Check that the “IoT Example Dashboard” shows a time‑series for <code>test_metric</code>.  You can edit this
+        dashboard or create new ones using Grafana’s UI.</li>
+    </ol>
+
+    <h2>Conclusion</h2>
+    <p>This monitoring stack demonstrates how a free‑tier EC2 instance can be leveraged to run a fully
+      functional IoT data ingestion and visualisation pipeline.  VictoriaMetrics and InfluxDB 1.8
+      provide lightweight storage backends; Grafana enables flexible dashboards; and the provided
+      script automates the entire deployment.  By adjusting the retention, credentials and network
+      configuration parameters, you can tailor the stack to your own IoT projects and scale up when
+      necessary.</p>
+  </main>
+</body>
+</html>

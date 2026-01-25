@@ -87,6 +87,16 @@ write_file() {
   fi
 }
 
+append_file() {
+  local path="$1"
+  if [ "$DRY_RUN" = true ]; then
+    echo "DRY‑RUN: append $path"
+    cat
+  else
+    cat >> "$path"
+  fi
+}
+
 # Pre‑flight checks: ensure script is run as root and OS is Debian/Ubuntu
 if [ "$EUID" -ne 0 ]; then
   echo "This script must be run as root (use sudo)." >&2
@@ -227,7 +237,7 @@ server {
 ${NGINX_DB_LOCATIONS}}
 EOF
 
-  cat >> "$COMPOSE_FILE" <<EOF
+  append_file "$COMPOSE_FILE" <<EOF
   nginx:
     image: nginx:stable
     restart: unless-stopped
@@ -268,7 +278,7 @@ EOF
     MOSQUITTO_WS_PORTS=$'      - "'"$MQTT_WS_PORT"':9001"\n'
   fi
 
-  cat >> "$COMPOSE_FILE" <<EOF
+  append_file "$COMPOSE_FILE" <<EOF
   mosquitto:
     image: eclipse-mosquitto:2
     restart: unless-stopped
@@ -465,7 +475,7 @@ EOF
     NODE_RED_DEPENDS="${NODE_RED_DEPENDS}\n      - mosquitto"
   fi
 
-  cat >> "$COMPOSE_FILE" <<EOF
+  append_file "$COMPOSE_FILE" <<EOF
   nodered:
     image: nodered/node-red:latest
     restart: unless-stopped
@@ -557,6 +567,12 @@ if [ "$DRY_RUN" = true ]; then
 else
   docker compose -f "$COMPOSE_FILE" pull
   docker compose -f "$COMPOSE_FILE" up -d
+fi
+
+if [ "$DRY_RUN" = true ]; then
+  log "Dry-run mode enabled; skipping readiness checks and test ingestion."
+  log "Bootstrap complete. Grafana is available on port 3000 (admin credentials: ${GRAFANA_ADMIN_USER}/${GRAFANA_ADMIN_PASS})."
+  exit 0
 fi
 
 # Wait for services to be ready and perform basic ingestion tests

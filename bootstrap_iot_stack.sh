@@ -244,6 +244,12 @@ else
   docker compose -f "$COMPOSE_FILE" up -d
 fi
 
+if [ "$DRY_RUN" = true ]; then
+  log "Dry-run mode enabled; skipping readiness checks and test ingestion."
+  log "Bootstrap complete. Grafana is available on port 3000 (admin credentials: ${GRAFANA_ADMIN_USER}/${GRAFANA_ADMIN_PASS})."
+  exit 0
+fi
+
 # Wait for services to be ready and perform basic ingestion tests
 function wait_for_port() {
   local host="$1"; local port="$2"; local retries=30;

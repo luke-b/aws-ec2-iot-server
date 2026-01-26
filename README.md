@@ -26,6 +26,64 @@ http://<server-ip>:3000
 
 Přihlašovací údaje nastavíte parametry `--grafana-user` a `--grafana-pass` (výchozí `admin/admin`).
 
+## Instalace na čistou EC2 pomocí `system_configs`
+
+Následující postup vás provede nastavením úplně nové EC2 instance tak, abyste měli funkční stack během několika minut. V adresáři `system_configs/` najdete připravené profily, které volají bootstrap skripty s jasnými parametry.
+
+### 1) Připravte EC2
+
+1. Vytvořte instanci (např. **Ubuntu 22.04 LTS**).
+2. V security group povolte **SSH (22)** a porty dle zvoleného profilu (viz tabulka níže).
+
+| Profil | Grafana | VM | Influx | Nginx | MQTT | Node-RED |
+| --- | --- | --- | --- | --- | --- | --- |
+| 01_lightweight_vm_grafana | 3000 | 8428 | – | – | – | – |
+| 02_lightweight_influx_grafana | 3000 | – | 8086 | – | – | – |
+| 03_vm_grafana_nginx | 80 | 8428 | – | 80 | – | – |
+| 04_vm_grafana_mqtt_nodered | 3000 | 8428 | – | – | 1883/9001 | 1880 |
+| 05_full_stack | 80 | 8428 | – | 80 | 1883/9001 | 1880 |
+
+> Tip: Pokud používáte Nginx, neotvírejte Grafanu na 3000 (`--no-expose-grafana` už je v profilu).
+
+### 2) Přihlaste se a stáhněte repozitář
+
+```sh
+ssh -i /cesta/k/klíči.pem ubuntu@<public-ip>
+sudo apt update
+sudo apt install -y git
+git clone <URL-repozitáře>
+cd aws-ec2-iot-server
+```
+
+### 3) Spusťte vybraný profil
+
+Nejprve si nastavte spustitelnost skriptů (stačí jednou):
+
+```sh
+chmod +x system_configs/*.sh
+```
+
+Pak vyberte profil podle toho, co chcete nasadit:
+
+```sh
+sudo ./system_configs/01_lightweight_vm_grafana.sh
+```
+
+> Tip: Pro bezpečné ověření můžete předem spustit `DRY_RUN=true ./system_configs/01_lightweight_vm_grafana.sh` a zkontrolovat, co se bude provádět.
+
+### 4) Ověřte běh
+
+- Grafana: `http://<public-ip>:3000` (nebo `http://<public-ip>` při Nginx)
+- Přihlašovací údaje: výchozí `admin/admin` (změňte po prvním přihlášení)
+
+### 5) (Volitelně) Vygenerujte demo data
+
+```sh
+./system_configs/generate_demo_metrics.sh --stack=vm
+```
+
+Tím se do databáze zapíšou ukázkové metriky a v Grafaně uvidíte, že stack přijímá data.
+
 ## Rozšířený stack (Nginx + MQTT + Node-RED)
 
 Pro variantu s reverse proxy a MQTT brokerem použijte rozšířený skript:

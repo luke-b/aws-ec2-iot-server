@@ -1,4 +1,4 @@
-# Lehký IoT monitorovací stack
+# IoT monitorovací stack
 
 Vítejte! Tento repozitář obsahuje skript **`bootstrap_iot_stack.sh`**, který vám na EC2 instanci rychle nasadí malý, úsporný monitorovací stack pro IoT data. Stack běží ve dvou variantách:
 

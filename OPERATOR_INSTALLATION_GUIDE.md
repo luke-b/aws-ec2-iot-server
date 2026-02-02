@@ -16,6 +16,8 @@ Skript:
 4. Připraví Grafanu s datasource a ukázkovým dashboardem.
 5. Spustí kontejnery a ověří ingest + query test.
 
+Varianta A (`bootstrap_iot_stack_variant_a.sh`) rozšiřuje stack o **Prometheus**, **IoTDB** a **AINode**, zachovává VictoriaMetrics jako dlouhodobé úložiště a přidává MQTT + Node‑RED pro dual‑write ingest.
+
 ---
 
 ## 2) Předpoklady (operátorské kontroly)

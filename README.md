@@ -9,7 +9,41 @@ Skript nainstaluje Docker, připraví perzistentní úložiště, vygeneruje Doc
 
 ## Stack chart
 
-![Vizualizace stacku IoT monitoringu](iot_diagram.png)
+### Renderovatelný diagram (PlantUML)
+
+Pro README‑compatible diagram použijte PlantUML (např. přes GitHub‑integrace nebo externí renderer):
+
+```plantuml
+@startuml
+title Variant A IoT Stack (Prometheus + VictoriaMetrics + IoTDB + AINode)
+
+skinparam backgroundColor white
+skinparam componentStyle rectangle
+skinparam defaultFontName Arial
+skinparam shadowing false
+
+rectangle "Edge Device" as edge
+rectangle "MQTT Broker" as mqtt
+rectangle "Node-RED" as nodered
+rectangle "Prometheus" as prom
+rectangle "VictoriaMetrics" as vm
+rectangle "AINode" as ainode
+rectangle "IoTDB Adapter" as adapter
+rectangle "IoTDB" as iotdb
+rectangle "Grafana" as grafana
+
+edge --> mqtt : telemetry
+mqtt --> nodered : mqtt\npayloads
+nodered --> vm : metrics\n(line protocol)
+nodered --> ainode : inference\nrequest
+ainode --> adapter : ai score
+adapter --> iotdb : insert\nrecord
+prom --> nodered : scrape
+prom --> vm : remote_write
+vm --> grafana : dashboards
+iotdb --> grafana : ai panels
+@enduml
+```
 
 ## Rychlý start
 
@@ -133,3 +167,25 @@ Klíčové parametry:
 - Dashboardy můžete ukládat do `$DATA_DIR/provisioning/dashboards`.
 
 Podrobnější provozní postup najdete v `OPERATOR_INSTALLATION_GUIDE.md`.
+
+## Varianta A (Prometheus + IoTDB + AINode)
+
+Pro „minimal changes“ variantu, která zachovává VictoriaMetrics jako Prometheus‑kompatibilní storage a zároveň přidává Prometheus, IoTDB a jednoduchý AINode, použijte:
+
+```sh
+chmod +x bootstrap_iot_stack_variant_a.sh
+sudo ./bootstrap_iot_stack_variant_a.sh
+```
+
+Stack zahrnuje i MQTT broker a Node‑RED s dual‑write flow (VictoriaMetrics + IoTDB). AINode poskytuje jednoduché HTTP API pro inference a posílá výstupy do IoTDB přes `iotdb-adapter`.
+
+### Porty
+
+- **Grafana**: 3000
+- **VictoriaMetrics**: 8428
+- **Prometheus**: 9090
+- **MQTT**: 1883 / 9001 (WS)
+- **Node‑RED**: 1880
+- **IoTDB**: 6667 (session), 18080 (REST)
+- **AINode**: 8090
+- **IoTDB adapter**: 8089

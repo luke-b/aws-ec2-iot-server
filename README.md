@@ -11,6 +11,38 @@ Skript nainstaluje Docker, připraví perzistentní úložiště, vygeneruje Doc
 
 ![Vizualizace stacku IoT monitoringu](iot_diagram.png)
 
+```plantuml
+@startuml
+title Variant A IoT Stack (Prometheus + VictoriaMetrics + IoTDB + AINode)
+
+skinparam backgroundColor white
+skinparam componentStyle rectangle
+skinparam defaultFontName Arial
+skinparam shadowing false
+
+rectangle "Edge Device" as edge
+rectangle "MQTT Broker" as mqtt
+rectangle "Node-RED" as nodered
+rectangle "Prometheus" as prom
+rectangle "VictoriaMetrics" as vm
+rectangle "AINode" as ainode
+rectangle "IoTDB Adapter" as adapter
+rectangle "IoTDB" as iotdb
+rectangle "Grafana" as grafana
+
+edge --> mqtt : telemetry
+mqtt --> nodered : mqtt\npayloads
+nodered --> vm : metrics\n(line protocol)
+nodered --> ainode : inference\nrequest
+ainode --> adapter : ai score
+adapter --> iotdb : insert\nrecord
+prom --> nodered : scrape
+prom --> vm : remote_write
+vm --> grafana : dashboards
+iotdb --> grafana : ai panels
+@enduml
+```
+
 ## Rychlý start
 
 ```sh

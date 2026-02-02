@@ -21,6 +21,9 @@ INFLUX_ADMIN_PASS=${INFLUX_ADMIN_PASS:-admin}
 ENABLE_NGINX=false
 ENABLE_MQTT=false
 ENABLE_NODE_RED=false
+ENABLE_PROMETHEUS=false
+ENABLE_IOTDB=false
+ENABLE_AINODE=false
 EXPOSE_DB_VIA_NGINX=false
 EXPOSE_GRAFANA=true
 NGINX_DOMAIN=""
@@ -32,6 +35,13 @@ MQTT_WS_PORT=${MQTT_WS_PORT:-9001}
 NODE_RED_PORT=${NODE_RED_PORT:-1880}
 NODE_RED_USER=${NODE_RED_USER:-admin}
 NODE_RED_PASS=${NODE_RED_PASS:-admin}
+PROMETHEUS_PORT=${PROMETHEUS_PORT:-9090}
+PROMETHEUS_RETENTION=${PROMETHEUS_RETENTION:-7d}
+IOTDB_PORT=${IOTDB_PORT:-6667}
+IOTDB_HTTP_PORT=${IOTDB_HTTP_PORT:-18080}
+IOTDB_HTTP_ENDPOINT=${IOTDB_HTTP_ENDPOINT:-}
+AINODE_PORT=${AINODE_PORT:-8081}
+AINODE_IMAGE=${AINODE_IMAGE:-}
 DRY_RUN=false
 
 # Parse command-line arguments
@@ -48,6 +58,9 @@ for arg in "$@"; do
     --enable-nginx) ENABLE_NGINX=true ;;
     --enable-mqtt) ENABLE_MQTT=true ;;
     --enable-node-red) ENABLE_NODE_RED=true ;;
+    --enable-prometheus) ENABLE_PROMETHEUS=true ;;
+    --enable-iotdb) ENABLE_IOTDB=true ;;
+    --enable-ainode) ENABLE_AINODE=true ;;
     --expose-db-via-nginx) EXPOSE_DB_VIA_NGINX=true ;;
     --expose-grafana) EXPOSE_GRAFANA=true ;;
     --no-expose-grafana) EXPOSE_GRAFANA=false ;;
@@ -60,6 +73,13 @@ for arg in "$@"; do
     --node-red-port=*) NODE_RED_PORT="${arg#*=}" ;;
     --node-red-user=*) NODE_RED_USER="${arg#*=}" ;;
     --node-red-pass=*) NODE_RED_PASS="${arg#*=}" ;;
+    --prometheus-port=*) PROMETHEUS_PORT="${arg#*=}" ;;
+    --prometheus-retention=*) PROMETHEUS_RETENTION="${arg#*=}" ;;
+    --iotdb-port=*) IOTDB_PORT="${arg#*=}" ;;
+    --iotdb-http-port=*) IOTDB_HTTP_PORT="${arg#*=}" ;;
+    --iotdb-http-endpoint=*) IOTDB_HTTP_ENDPOINT="${arg#*=}" ;;
+    --ainode-port=*) AINODE_PORT="${arg#*=}" ;;
+    --ainode-image=*) AINODE_IMAGE="${arg#*=}" ;;
     --dry-run) DRY_RUN=true ;;
     *) echo "Unknown option: $arg"; exit 1 ;;
   esac
@@ -97,6 +117,25 @@ append_file() {
   fi
 }
 
+validate_flags() {
+  if [ "$ENABLE_PROMETHEUS" = true ] && [ "$STACK_TYPE" != "vm" ]; then
+    log "Prometheus integration requires VictoriaMetrics; use --stack=vm."
+    exit 1
+  fi
+  if [ "$ENABLE_IOTDB" = true ] && [ "$ENABLE_NODE_RED" = true ] && [ -z "$IOTDB_HTTP_ENDPOINT" ]; then
+    log "IoTDB HTTP endpoint must be set when --enable-iotdb is used with Node-RED (set --iotdb-http-endpoint=...)."
+    exit 1
+  fi
+  if [ "$ENABLE_AINODE" = true ] && [ -z "$AINODE_IMAGE" ]; then
+    log "AINode image must be set when --enable-ainode is used (set --ainode-image=...)."
+    exit 1
+  fi
+  if [ "$ENABLE_AINODE" = true ] && [ "$ENABLE_IOTDB" = false ]; then
+    log "AINode requires IoTDB to be enabled; add --enable-iotdb."
+    exit 1
+  fi
+}
+
 # Pre‑flight checks: ensure script is run as root and OS is Debian/Ubuntu
 if [ "$EUID" -ne 0 ]; then
   echo "This script must be run as root (use sudo)." >&2
@@ -108,6 +147,7 @@ if ! command -v apt-get >/dev/null 2>&1; then
 fi
 
 log "Starting extended bootstrap for stack type: $STACK_TYPE"
+validate_flags
 
 # Install Docker if missing
 if ! command -v docker >/dev/null 2>&1; then
@@ -132,12 +172,13 @@ fi
 
 # Create directories for volumes and configs
 log "Creating data directories under $DATA_DIR"
-run_cmd "mkdir -p $DATA_DIR/volumes/{grafana,vmdata,influxdb,mqtt/data,mqtt/log,node-red}"
+run_cmd "mkdir -p $DATA_DIR/volumes/{grafana,vmdata,influxdb,mqtt/data,mqtt/log,node-red,iotdb/data,iotdb/logs,ainode}"
 run_cmd "mkdir -p $DATA_DIR/compose"
 run_cmd "mkdir -p $DATA_DIR/provisioning/datasources"
 run_cmd "mkdir -p $DATA_DIR/provisioning/dashboards"
 run_cmd "mkdir -p $DATA_DIR/nginx/conf.d"
 run_cmd "mkdir -p $DATA_DIR/mqtt"
+run_cmd "mkdir -p $DATA_DIR/prometheus"
 run_cmd "chown -R 472:472 $DATA_DIR/volumes/grafana"
 run_cmd "chown -R 1000:1000 $DATA_DIR/volumes/node-red"
 
@@ -292,6 +333,40 @@ ${MOSQUITTO_WS_PORTS}    volumes:
 EOF
 fi
 
+if [ "$ENABLE_IOTDB" = true ]; then
+  log "Configuring IoTDB service"
+  append_file "$COMPOSE_FILE" <<EOF
+  iotdb:
+    image: apache/iotdb:latest
+    restart: unless-stopped
+    ports:
+      - "$IOTDB_PORT:6667"
+      - "$IOTDB_HTTP_PORT:18080"
+    volumes:
+      - $DATA_DIR/volumes/iotdb/data:/iotdb/data
+      - $DATA_DIR/volumes/iotdb/logs:/iotdb/logs
+EOF
+fi
+
+if [ "$ENABLE_AINODE" = true ]; then
+  log "Configuring AINode service"
+  append_file "$COMPOSE_FILE" <<EOF
+  ainode:
+    image: $AINODE_IMAGE
+    restart: unless-stopped
+    ports:
+      - "$AINODE_PORT:8081"
+    environment:
+      - IOTDB_HOST=iotdb
+      - IOTDB_PORT=6667
+      - IOTDB_HTTP_PORT=18080
+    volumes:
+      - $DATA_DIR/volumes/ainode:/data
+    depends_on:
+      - iotdb
+EOF
+fi
+
 if [ "$ENABLE_NODE_RED" = true ]; then
   log "Configuring Node-RED for MQTT ingestion"
   if [ "$ENABLE_MQTT" = false ]; then
@@ -331,7 +406,175 @@ EOF
     NODE_RED_DB_URL="http://influxdb:8086/write?db=${INFLUX_DB}"
   fi
 
-  write_file "$DATA_DIR/volumes/node-red/flows.json" <<'EOF'
+  if [ "$ENABLE_IOTDB" = true ]; then
+    write_file "$DATA_DIR/volumes/node-red/flows.json" <<'EOF'
+[
+  {
+    "id": "flow1",
+    "type": "tab",
+    "label": "MQTT to Metrics",
+    "disabled": false,
+    "info": ""
+  },
+  {
+    "id": "mqtt-in-1",
+    "type": "mqtt in",
+    "z": "flow1",
+    "name": "MQTT ingest",
+    "topic": "iot/#",
+    "qos": "0",
+    "datatype": "auto",
+    "broker": "mqtt-broker-1",
+    "nl": false,
+    "rap": true,
+    "rh": 0,
+    "x": 140,
+    "y": 120,
+    "wires": [["json-1"]]
+  },
+  {
+    "id": "json-1",
+    "type": "json",
+    "z": "flow1",
+    "name": "Parse JSON",
+    "property": "payload",
+    "action": "",
+    "pretty": false,
+    "x": 330,
+    "y": 120,
+    "wires": [["function-1"]]
+  },
+  {
+    "id": "function-1",
+    "type": "function",
+    "z": "flow1",
+    "name": "To line protocol",
+    "func": "let data = msg.payload;\\nif (typeof data === \\"string\\") {\\n  try { data = JSON.parse(data); } catch (e) {}\\n}\\nconst measurement = data.measurement || \\"iot_metric\\";\\nconst fields = data.fields || { value: data.value };\\nconst tags = data.tags || {};\\nconst escapeTag = (value) => String(value).replace(/[,= ]/g, '\\\\$&');\\nconst escapeFieldKey = (value) => String(value).replace(/[,= ]/g, '\\\\$&');\\nconst formatValue = (value) => {\\n  if (typeof value === \\"number\\") return value;\\n  if (typeof value === \\"boolean\\") return value ? \\"true\\" : \\"false\\";\\n  return '\\"' + String(value).replace(/\\\\\\"/g, '\\\\\\\\"') + '\\"';\\n};\\nconst tagStr = Object.keys(tags).map((key) => escapeTag(key) + \\"=\\" + escapeTag(tags[key])).join(\",\");\\nconst fieldStr = Object.keys(fields).map((key) => escapeFieldKey(key) + \\"=\\" + formatValue(fields[key])).join(\",\");\\nmsg.payload = measurement + (tagStr ? \\",\\" + tagStr : \\"\\" ) + \\" \\" + fieldStr;\\nreturn msg;",
+    "outputs": 1,
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 540,
+    "y": 120,
+    "wires": [["http-headers-vm", "http-headers-iotdb"]]
+  },
+  {
+    "id": "http-headers-vm",
+    "type": "change",
+    "z": "flow1",
+    "name": "Set VM headers",
+    "rules": [
+      {
+        "t": "set",
+        "p": "headers",
+        "pt": "msg",
+        "to": "{\\"Content-Type\\":\\"text/plain\\"}",
+        "tot": "json"
+      }
+    ],
+    "x": 760,
+    "y": 80,
+    "wires": [["http-request-vm"]]
+  },
+  {
+    "id": "http-request-vm",
+    "type": "http request",
+    "z": "flow1",
+    "name": "Write VM metrics",
+    "method": "POST",
+    "ret": "obj",
+    "paytoqs": "ignore",
+    "url": "__NODE_RED_DB_URL__",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "authType": "",
+    "senderr": false,
+    "headers": [],
+    "x": 980,
+    "y": 80,
+    "wires": [["debug-1"]]
+  },
+  {
+    "id": "http-headers-iotdb",
+    "type": "change",
+    "z": "flow1",
+    "name": "Set IoTDB headers",
+    "rules": [
+      {
+        "t": "set",
+        "p": "headers",
+        "pt": "msg",
+        "to": "{\\"Content-Type\\":\\"text/plain\\"}",
+        "tot": "json"
+      }
+    ],
+    "x": 760,
+    "y": 160,
+    "wires": [["http-request-iotdb"]]
+  },
+  {
+    "id": "http-request-iotdb",
+    "type": "http request",
+    "z": "flow1",
+    "name": "Write IoTDB metrics",
+    "method": "POST",
+    "ret": "obj",
+    "paytoqs": "ignore",
+    "url": "__NODE_RED_IOTDB_URL__",
+    "tls": "",
+    "persist": false,
+    "proxy": "",
+    "authType": "",
+    "senderr": false,
+    "headers": [],
+    "x": 990,
+    "y": 160,
+    "wires": [["debug-1"]]
+  },
+  {
+    "id": "debug-1",
+    "type": "debug",
+    "z": "flow1",
+    "name": "DB response",
+    "active": true,
+    "tosidebar": true,
+    "console": false,
+    "tostatus": false,
+    "complete": "payload",
+    "targetType": "msg",
+    "x": 1180,
+    "y": 120,
+    "wires": []
+  },
+  {
+    "id": "mqtt-broker-1",
+    "type": "mqtt-broker",
+    "name": "Mosquitto",
+    "broker": "mosquitto",
+    "port": "1883",
+    "clientid": "",
+    "autoConnect": true,
+    "usetls": false,
+    "protocolVersion": "4",
+    "keepalive": "60",
+    "cleansession": true,
+    "birthTopic": "",
+    "birthQos": "0",
+    "birthPayload": "",
+    "closeTopic": "",
+    "closePayload": "",
+    "willTopic": "",
+    "willQos": "0",
+    "willPayload": "",
+    "user": "__MQTT_USER__",
+    "password": "__MQTT_PASS__"
+  }
+]
+EOF
+  else
+    write_file "$DATA_DIR/volumes/node-red/flows.json" <<'EOF'
 [
   {
     "id": "flow1",
@@ -460,8 +703,12 @@ EOF
   }
 ]
 EOF
+  fi
 
   run_cmd "sed -i \"s|__NODE_RED_DB_URL__|$NODE_RED_DB_URL|g\" $DATA_DIR/volumes/node-red/flows.json"
+  if [ "$ENABLE_IOTDB" = true ]; then
+    run_cmd "sed -i \"s|__NODE_RED_IOTDB_URL__|$IOTDB_HTTP_ENDPOINT|g\" $DATA_DIR/volumes/node-red/flows.json"
+  fi
   run_cmd "sed -i \"s|__MQTT_USER__|$MQTT_USER|g\" $DATA_DIR/volumes/node-red/flows.json"
   run_cmd "sed -i \"s|__MQTT_PASS__|$MQTT_PASS|g\" $DATA_DIR/volumes/node-red/flows.json"
 
@@ -485,6 +732,42 @@ EOF
       - $DATA_DIR/volumes/node-red:/data
     depends_on:
 ${NODE_RED_DEPENDS}
+EOF
+fi
+
+if [ "$ENABLE_PROMETHEUS" = true ]; then
+  log "Configuring Prometheus"
+  PROMETHEUS_CONFIG="$DATA_DIR/prometheus/prometheus.yml"
+  write_file "$PROMETHEUS_CONFIG" <<EOF
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["prometheus:9090"]
+  - job_name: victoriametrics
+    static_configs:
+      - targets: ["victoriametrics:8428"]
+
+remote_write:
+  - url: http://victoriametrics:8428/api/v1/write
+EOF
+
+  append_file "$COMPOSE_FILE" <<EOF
+  prometheus:
+    image: prom/prometheus:latest
+    restart: unless-stopped
+    ports:
+      - "$PROMETHEUS_PORT:9090"
+    volumes:
+      - $DATA_DIR/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=$PROMETHEUS_RETENTION
+    depends_on:
+      - victoriametrics
 EOF
 fi
 
@@ -627,6 +910,21 @@ fi
 if [ "$ENABLE_NODE_RED" = true ]; then
   log "Waiting for Node-RED on port ${NODE_RED_PORT}..."
   wait_for_port localhost "$NODE_RED_PORT" || { log "Node-RED did not become ready"; exit 1; }
+fi
+
+if [ "$ENABLE_PROMETHEUS" = true ]; then
+  log "Waiting for Prometheus on port ${PROMETHEUS_PORT}..."
+  wait_for_port localhost "$PROMETHEUS_PORT" || { log "Prometheus did not become ready"; exit 1; }
+fi
+
+if [ "$ENABLE_IOTDB" = true ]; then
+  log "Waiting for IoTDB HTTP API on port ${IOTDB_HTTP_PORT}..."
+  wait_for_port localhost "$IOTDB_HTTP_PORT" || { log "IoTDB did not become ready"; exit 1; }
+fi
+
+if [ "$ENABLE_AINODE" = true ]; then
+  log "Waiting for AINode on port ${AINODE_PORT}..."
+  wait_for_port localhost "$AINODE_PORT" || { log "AINode did not become ready"; exit 1; }
 fi
 
 log "Bootstrap complete. Grafana is available on port 3000 (admin credentials: ${GRAFANA_ADMIN_USER}/${GRAFANA_ADMIN_PASS})."

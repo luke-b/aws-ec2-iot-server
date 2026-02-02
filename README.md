@@ -35,13 +35,14 @@ Následující postup vás provede nastavením úplně nové EC2 instance tak, a
 1. Vytvořte instanci (např. **Ubuntu 22.04 LTS**).
 2. V security group povolte **SSH (22)** a porty dle zvoleného profilu (viz tabulka níže).
 
-| Profil | Grafana | VM | Influx | Nginx | MQTT | Node-RED |
-| --- | --- | --- | --- | --- | --- | --- |
-| 01_lightweight_vm_grafana | 3000 | 8428 | – | – | – | – |
-| 02_lightweight_influx_grafana | 3000 | – | 8086 | – | – | – |
-| 03_vm_grafana_nginx | 80 | 8428 | – | 80 | – | – |
-| 04_vm_grafana_mqtt_nodered | 3000 | 8428 | – | – | 1883/9001 | 1880 |
-| 05_full_stack | 80 | 8428 | – | 80 | 1883/9001 | 1880 |
+| Profil | Grafana | VM | Influx | Nginx | MQTT | Node-RED | Prometheus | IoTDB | AINode |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 01_lightweight_vm_grafana | 3000 | 8428 | – | – | – | – | – | – | – |
+| 02_lightweight_influx_grafana | 3000 | – | 8086 | – | – | – | – | – | – |
+| 03_vm_grafana_nginx | 80 | 8428 | – | 80 | – | – | – | – | – |
+| 04_vm_grafana_mqtt_nodered | 3000 | 8428 | – | – | 1883/9001 | 1880 | – | – | – |
+| 05_full_stack | 80 | 8428 | – | 80 | 1883/9001 | 1880 | – | – | – |
+| 06_variant_a_prometheus_iotdb_ainode | 3000 | 8428 | – | – | 1883/9001 | 1880 | 9090 | 6667/18080 | 8081 |
 
 > Tip: Pokud používáte Nginx, neotvírejte Grafanu na 3000 (`--no-expose-grafana` už je v profilu).
 
@@ -98,12 +99,40 @@ Klíčové parametry:
 - `--enable-nginx` – zapne Nginx reverse proxy před Grafanou.
 - `--enable-mqtt` – přidá MQTT broker (Eclipse Mosquitto).
 - `--enable-node-red` – přidá Node-RED pro transformaci MQTT payloadů do metrik.
+- `--enable-prometheus` – přidá Prometheus server s `remote_write` do VictoriaMetrics (vyžaduje `--stack=vm`).
+- `--enable-iotdb` – přidá IoTDB jako paralelní TSDB vrstvu (vyžaduje `--iotdb-http-endpoint`).
+- `--enable-ainode` – přidá AINode službu (vyžaduje `--enable-iotdb` a `--ainode-image`).
 - `--no-expose-grafana` – nepublikuje port 3000 na hostu (použijte s Nginx).
 - `--expose-db-via-nginx` – volitelně zpřístupní DB API přes Nginx.
 - `--mqtt-user` / `--mqtt-pass` – přihlašovací údaje pro MQTT.
 - `--mqtt-port` / `--mqtt-ws-port` – porty pro MQTT a WebSocket MQTT.
 - `--node-red-port` – port pro Node-RED editor (default 1880).
 - `--node-red-user` / `--node-red-pass` – přihlašovací údaje pro Node-RED.
+- `--prometheus-port` / `--prometheus-retention` – port a retence Prometheu.
+- `--iotdb-port` / `--iotdb-http-port` – porty pro IoTDB RPC a HTTP API.
+- `--iotdb-http-endpoint` – HTTP endpoint pro ingest do IoTDB (používá Node-RED).
+- `--ainode-port` / `--ainode-image` – port a image pro AINode službu.
+
+## Varianta A: Prometheus + IoTDB + AINode (paralelní vrstva)
+
+Tato varianta ponechává VictoriaMetrics jako Prometheus‑kompatibilní backend a přidává
+Prometheus server, IoTDB a AINode paralelně. Node‑RED zapisuje metriky do VictoriaMetrics i do IoTDB.
+
+```sh
+chmod +x bootstrap_iot_stack_extended.sh
+sudo ./bootstrap_iot_stack_extended.sh \
+  --stack=vm \
+  --enable-mqtt \
+  --enable-node-red \
+  --enable-prometheus \
+  --enable-iotdb \
+  --enable-ainode \
+  --iotdb-http-endpoint=http://localhost:18080/<iotdb-ingest-endpoint> \
+  --ainode-image=<ainode-image>
+```
+
+> Poznámka: `--iotdb-http-endpoint` musí odpovídat konfiguraci IoTDB ingest API a `--ainode-image`
+> musí být platný image, který umí komunikovat s IoTDB.
 
 ## Požadavky
 
@@ -115,6 +144,9 @@ Klíčové parametry:
   - **VictoriaMetrics**: TCP **8428** (jen pro `--stack=vm`)
   - **InfluxDB**: TCP **8086** (jen pro `--stack=influx`)
   - **Node-RED**: TCP **1880** (jen pokud zapnete `--enable-node-red`)
+  - **Prometheus**: TCP **9090** (jen pokud zapnete `--enable-prometheus`)
+  - **IoTDB**: TCP **6667** (RPC) a **18080** (HTTP API), jen pokud zapnete `--enable-iotdb`
+  - **AINode**: TCP **8081** (jen pokud zapnete `--enable-ainode`)
 
 ## Parametry skriptu
 

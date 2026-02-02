@@ -21,6 +21,9 @@ This directory contains example system configurations that call the core bootstr
    - VictoriaMetrics + Grafana + Mosquitto MQTT broker + Node-RED for ingestion.
 5. **05_full_stack.sh**
    - Full stack: VictoriaMetrics + Grafana via Nginx, MQTT broker, Node-RED, and DB API exposure through Nginx.
+6. **06_variant_a_prometheus_iotdb_ainode.sh**
+   - Variant A: VictoriaMetrics + Grafana + Prometheus + MQTT + Node-RED with parallel IoTDB + AINode.
+   - Update `IOTDB_HTTP_ENDPOINT` and `AINODE_IMAGE` before running.
 
 ## Demo Metrics Generator
 

@@ -46,12 +46,14 @@
     <p>Webové dashboardy na portu 3000. Skript nastaví výchozího admina i datasource a přidá ukázkový
       dashboard, takže po instalaci hned vidíte první graf.</p>
 
-    <h3>Volitelná rozšíření (Nginx + MQTT + Node-RED)</h3>
+    <h3>Volitelná rozšíření (Nginx + MQTT + Node-RED + Prometheus + IoTDB + AINode)</h3>
     <p>Rozšířený skript přidává Nginx jako reverse proxy (pro jednotný vstupní bod a možnost HTTPS),
       MQTT broker (Eclipse Mosquitto) pro nativní ingest IoT dat a volitelně Node-RED pro zpracování
       MQTT payloadů do line protocol. Nginx může směrovat Grafanu i volitelné DB API, MQTT broker
       přijímá data od zařízení a Node-RED je může transformovat, filtrovat nebo obohatit před zápisem
       do databáze.</p>
+    <p>Pro Variant A je možné přidat také Prometheus server (scrape + alerting) s <code>remote_write</code>
+      do VictoriaMetrics, IoTDB jako paralelní TSDB vrstvu a AINode pro AI/ML výpočty nad historickými daty.</p>
 
     <div class="callout">
       <strong>Tip:</strong> Pokud Grafana běží uvnitř Docker Compose, datasource pro VictoriaMetrics může
@@ -65,6 +67,10 @@
       <li><strong>8428</strong> – VictoriaMetrics (jen pro <code>--stack=vm</code>)</li>
       <li><strong>8086</strong> – InfluxDB (jen pro <code>--stack=influx</code>)</li>
       <li><strong>1880</strong> – Node-RED editor (pokud je zapnutý)</li>
+      <li><strong>9090</strong> – Prometheus (pokud je zapnutý)</li>
+      <li><strong>6667</strong> – IoTDB RPC (pokud je zapnutý)</li>
+      <li><strong>18080</strong> – IoTDB HTTP API (pokud je zapnutý)</li>
+      <li><strong>8081</strong> – AINode (pokud je zapnutý)</li>
     </ul>
     <p>Doporučení: omezte přístup na vlastní IP/VPN a změňte výchozí hesla.</p>
 

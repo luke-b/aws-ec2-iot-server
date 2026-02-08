@@ -13,38 +13,38 @@ Skript nainstaluje Docker, připraví perzistentní úložiště, vygeneruje Doc
 
 ```mermaid
 flowchart TD
-    %% Node Definitions
-    edge[Edge Device]
+    %% Definice uzlů
+    edge[Edge Zařízení]
     mqtt[MQTT Broker]
     nodered[Node-RED]
     prom[Prometheus]
     vm[VictoriaMetrics]
     ainode[AINode]
-    adapter[IoTDB Adapter]
+    adapter[IoTDB Adaptér]
     iotdb[IoTDB]
     grafana[Grafana]
 
-    %% Relationships
-    edge -->|telemetry| mqtt
-    mqtt -->|mqtt<br/>payloads| nodered
+    %% Vztahy
+    edge -->|telemetrie| mqtt
+    mqtt -->|mqtt<br/>payloady| nodered
     
-    %% Forking from Node-RED
-    nodered -->|metrics<br/>line protocol| vm
-    nodered -->|inference<br/>request| ainode
+    %% Větvení z Node-RED
+    nodered -->|metriky<br/>(line protocol)| vm
+    nodered -->|požadavek<br/>na inferenci| ainode
     
-    %% AI Path
-    ainode -->|ai score| adapter
-    adapter -->|insert<br/>record| iotdb
+    %% AI Cesta
+    ainode -->|ai skóre| adapter
+    adapter -->|vložení<br/>záznamu| iotdb
     
-    %% Prometheus Integration
-    prom -->|scrape| nodered
+    %% Integrace Prometheus
+    prom -->|stahování<br/>(scrape)| nodered
     prom -->|remote_write| vm
     
-    %% Visualization
-    vm -->|dashboards| grafana
-    iotdb -->|ai panels| grafana
+    %% Vizualizace
+    vm -->|dashboardy| grafana
+    iotdb -->|ai panely| grafana
 
-    %% Styling (Optional: Mimics the white background/simple look)
+    %% Stylování (Volitelné)
     style edge fill:#fff,stroke:#333,stroke-width:2px
     style mqtt fill:#fff,stroke:#333,stroke-width:2px
     style nodered fill:#fff,stroke:#333,stroke-width:2px

@@ -29,7 +29,8 @@ flowchart TD
     mqtt -->|mqtt<br/>payloady| nodered
     
     %% Větvení z Node-RED
-    nodered -->|metriky<br/>(line protocol)| vm
+    %% FIX: Parentheses changed to HTML entities #40; and #41;
+    nodered -->|metriky<br/>#40;line protocol#41;| vm
     nodered -->|požadavek<br/>na inferenci| ainode
     
     %% AI Cesta
@@ -37,14 +38,15 @@ flowchart TD
     adapter -->|vložení<br/>záznamu| iotdb
     
     %% Integrace Prometheus
-    prom -->|stahování<br/>(scrape)| nodered
+    %% FIX: Parentheses changed to HTML entities #40; and #41;
+    prom -->|stahování<br/>#40;scrape#41;| nodered
     prom -->|remote_write| vm
     
     %% Vizualizace
     vm -->|dashboardy| grafana
     iotdb -->|ai panely| grafana
 
-    %% Stylování (Volitelné)
+    %% Stylování
     style edge fill:#fff,stroke:#333,stroke-width:2px
     style mqtt fill:#fff,stroke:#333,stroke-width:2px
     style nodered fill:#fff,stroke:#333,stroke-width:2px

@@ -11,36 +11,49 @@ Skript nainstaluje Docker, připraví perzistentní úložiště, vygeneruje Doc
 
 ![Vizualizace stacku IoT monitoringu](iot_diagram.png)
 
-```plantuml
-@startuml
-title Variant A IoT Stack (Prometheus + VictoriaMetrics + IoTDB + AINode)
+```mermaid
+flowchart TD
+    %% Node Definitions
+    edge[Edge Device]
+    mqtt[MQTT Broker]
+    nodered[Node-RED]
+    prom[Prometheus]
+    vm[VictoriaMetrics]
+    ainode[AINode]
+    adapter[IoTDB Adapter]
+    iotdb[IoTDB]
+    grafana[Grafana]
 
-skinparam backgroundColor white
-skinparam componentStyle rectangle
-skinparam defaultFontName Arial
-skinparam shadowing false
+    %% Relationships
+    edge -->|telemetry| mqtt
+    mqtt -->|mqtt<br/>payloads| nodered
+    
+    %% Forking from Node-RED
+    nodered -->|metrics<br/>line protocol| vm
+    nodered -->|inference<br/>request| ainode
+    
+    %% AI Path
+    ainode -->|ai score| adapter
+    adapter -->|insert<br/>record| iotdb
+    
+    %% Prometheus Integration
+    prom -->|scrape| nodered
+    prom -->|remote_write| vm
+    
+    %% Visualization
+    vm -->|dashboards| grafana
+    iotdb -->|ai panels| grafana
 
-rectangle "Edge Device" as edge
-rectangle "MQTT Broker" as mqtt
-rectangle "Node-RED" as nodered
-rectangle "Prometheus" as prom
-rectangle "VictoriaMetrics" as vm
-rectangle "AINode" as ainode
-rectangle "IoTDB Adapter" as adapter
-rectangle "IoTDB" as iotdb
-rectangle "Grafana" as grafana
-
-edge --> mqtt : telemetry
-mqtt --> nodered : mqtt\npayloads
-nodered --> vm : metrics\n(line protocol)
-nodered --> ainode : inference\nrequest
-ainode --> adapter : ai score
-adapter --> iotdb : insert\nrecord
-prom --> nodered : scrape
-prom --> vm : remote_write
-vm --> grafana : dashboards
-iotdb --> grafana : ai panels
-@enduml
+    %% Styling (Optional: Mimics the white background/simple look)
+    style edge fill:#fff,stroke:#333,stroke-width:2px
+    style mqtt fill:#fff,stroke:#333,stroke-width:2px
+    style nodered fill:#fff,stroke:#333,stroke-width:2px
+    style prom fill:#fff,stroke:#333,stroke-width:2px
+    style vm fill:#fff,stroke:#333,stroke-width:2px
+    style ainode fill:#fff,stroke:#333,stroke-width:2px
+    style adapter fill:#fff,stroke:#333,stroke-width:2px
+    style iotdb fill:#fff,stroke:#333,stroke-width:2px
+    style grafana fill:#fff,stroke:#333,stroke-width:2px
 ```
 
 ## Rychlý start
